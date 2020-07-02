@@ -70,7 +70,7 @@ class Agent(object):
         self.batch_size = batch_size
 
         self.memory = ReplayBuffer(mem_size, input_shape, n_actions)
-        self.q_eval = DeepQNetwork(lr, input_shape, n_actions, 256, 512)
+        self.q_eval = DeepQNetwork(lr, input_shape, n_actions, 512, 1024)
 
         tns = T.Tensor([1,2,3]).to(self.q_eval.device)
         tns2 = T.Tensor([4,5,6]).to(self.q_eval.device)
@@ -100,24 +100,27 @@ class Agent(object):
 
             states = T.Tensor(states).float().to(self.q_eval.device)
             states_ = T.Tensor(states_).float().to(self.q_eval.device)
-            actions = T.Tensor(actions).to(self.q_eval.device)
+            actions = T.Tensor(actions).to(T.int64).to(self.q_eval.device)
             rewards = T.Tensor(rewards).float().to(self.q_eval.device)
-            terminal = T.Tensor(dones).bool().to(self.q_eval.device)
-            # print(terminal.shape, terminal.dtype)
+            terminal = T.Tensor(dones).to(T.bool).to(self.q_eval.device)
+
+            # print(states.dtype, states_.dtype, rewards.dtype)
 
             # print(states[terminal])
             batch_indices = np.arange(self.batch_size, dtype=np.int64)
+            # print(actions.dtype)
             q_eval = self.q_eval(states)[batch_indices, actions]
             # print(q_eval.shape)
-            q_next = self.q_eval(states_).to(self.q_eval.device)
+            q_next = self.q_eval(states_)
+            q_next = T.max(q_next, dim=1)[0]# .to(self.q_eval.device)
             # print(q_next.shape)
             # print(q_next[terminal])
             q_next[terminal] = 0.0
 
             # q_target = q_eval.clone().detach().to(self.q_eval.device)
 
-            q_target = rewards + self.gamma*T.max(q_next, dim=1)[0]
-            loss = self.q_eval.loss(q_target, q_eval).cuda()
+            q_target = rewards + q_next
+            loss = self.q_eval.loss(q_target, q_eval)
             loss.backward()
             self.q_eval.optimizer.step()
 
@@ -131,7 +134,7 @@ if __name__ == '__main__':
 
     env = gym.make('LunarLander-v2')
 
-    agent = Agent(lr=0.0001, gamma=0.995, input_shape=(8,), n_actions=4, mem_size=10_000, batch_size=32, eps=1.0, eps_dec=10e-4, eps_end=0.01)
+    agent = Agent(lr=0.00001, gamma=0.995, input_shape=(8,), n_actions=4, mem_size=10_000, batch_size=32, eps=1.0, eps_dec=10e-3, eps_end=0.01)
 
     for i in range(n_games):
         state = env.reset()
